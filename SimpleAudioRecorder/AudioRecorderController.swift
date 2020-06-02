@@ -11,6 +11,8 @@ import AVFoundation
 
 class AudioRecorderController: UIViewController {
     
+    private var timer: Timer?
+    
     @IBOutlet var playButton: UIButton!
     @IBOutlet var recordButton: UIButton!
     @IBOutlet var timeElapsedLabel: UILabel!
@@ -37,17 +39,20 @@ class AudioRecorderController: UIViewController {
         
         // Use a font that won't jump around as values change
         timeElapsedLabel.font = UIFont.monospacedDigitSystemFont(ofSize: timeElapsedLabel.font.pointSize,
-                                                          weight: .regular)
+                                                                 weight: .regular)
         timeRemainingLabel.font = UIFont.monospacedDigitSystemFont(ofSize: timeRemainingLabel.font.pointSize,
                                                                    weight: .regular)
         
         loadAudio()
     }
     
+    deinit {
+        cancelTimer()
+    }
+    
     
     // MARK: - Timer
     
-    /*
     func startTimer() {
         timer?.invalidate()
         
@@ -56,20 +61,20 @@ class AudioRecorderController: UIViewController {
             
             self.updateViews()
             
-            if let audioRecorder = self.audioRecorder,
-                self.isRecording == true {
-                
-                audioRecorder.updateMeters()
-                self.audioVisualizer.addValue(decibelValue: audioRecorder.averagePower(forChannel: 0))
-                
-            }
-            
-            if let audioPlayer = self.audioPlayer,
-                self.isPlaying == true {
-            
-                audioPlayer.updateMeters()
-                self.audioVisualizer.addValue(decibelValue: audioPlayer.averagePower(forChannel: 0))
-            }
+            //            if let audioRecorder = self.audioRecorder,
+            //                self.isRecording == true {
+            //
+            //                audioRecorder.updateMeters()
+            //                self.audioVisualizer.addValue(decibelValue: audioRecorder.averagePower(forChannel: 0))
+            //
+            //            }
+            //
+            //            if let audioPlayer = self.audioPlayer,
+            //                self.isPlaying == true {
+            //
+            //                audioPlayer.updateMeters()
+            //                self.audioVisualizer.addValue(decibelValue: audioPlayer.averagePower(forChannel: 0))
+            //            }
         }
     }
     
@@ -77,10 +82,21 @@ class AudioRecorderController: UIViewController {
         timer?.invalidate()
         timer = nil
     }
-    */
+    
     
     private func updateViews() {
         playButton.isSelected = isPlaying
+        // TODO: Extract into helper computed properties
+        let elapsedTime = audioPlayer?.currentTime ?? 0
+        let duration = audioPlayer?.duration ?? 0
+        let timeRemaining: TimeInterval = round(duration) - elapsedTime
+        
+        timeElapsedLabel.text = timeIntervalFormatter.string(from: elapsedTime)
+        timeRemainingLabel.text = timeIntervalFormatter.string(from: timeRemaining)
+        
+        timeSlider.minimumValue = 0
+        timeSlider.maximumValue = Float(duration)
+        timeSlider.value = Float(elapsedTime)
     }
     
     
@@ -99,18 +115,18 @@ class AudioRecorderController: UIViewController {
     func loadAudio() {
         let songURL = Bundle.main.url(forResource: "piano", withExtension: "mp3")! // Crash early if we are missing a resource a programmer added
         
-    // FUTURE: Do more error checking and fail early if porgrammer error, or a message to the user.
+        // FUTURE: Do more error checking and fail early if porgrammer error, or a message to the user.
         
         audioPlayer = try? AVAudioPlayer(contentsOf: songURL) // will be nil if this fails
     }
     
     /*
-    func prepareAudioSession() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, options: [.defaultToSpeaker])
-        try session.setActive(true, options: []) // can fail if on a phone call, for instance
-    }
-    */
+     func prepareAudioSession() throws {
+     let session = AVAudioSession.sharedInstance()
+     try session.setCategory(.playAndRecord, options: [.defaultToSpeaker])
+     try session.setActive(true, options: []) // can fail if on a phone call, for instance
+     }
+     */
     
     func togglePlayback() {
         if isPlaying {
@@ -122,16 +138,21 @@ class AudioRecorderController: UIViewController {
     
     func play() {
         audioPlayer?.play() // don't crash if player is nil ... if nothing to play just don't do anything
+        startTimer()
         updateViews()
     }
     
     func pause() {
         audioPlayer?.pause()
+        cancelTimer()
         updateViews()
     }
     
     
     // MARK: - Recording
+    
+    var recordingURL: URL?
+    var audioRecorder: AVAudioRecorder?
     
     func createNewRecordingURL() -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -139,12 +160,12 @@ class AudioRecorderController: UIViewController {
         let name = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: .withInternetDateTime)
         let file = documents.appendingPathComponent(name, isDirectory: false).appendingPathExtension("caf")
         
-//        print("recording URL: \(file)")
+        print("recording URL: \(file)")
         
         return file
     }
     
-    /*
+    
     func requestPermissionOrStartRecording() {
         switch AVAudioSession.sharedInstance().recordPermission {
         case .undetermined:
@@ -175,14 +196,32 @@ class AudioRecorderController: UIViewController {
             break
         }
     }
-    */
+    
+    var isRecording: Bool {
+        audioRecorder?.isRecording ?? false
+    }
+    
+    func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
     
     func startRecording() {
+        let recordingURL = createNewRecordingURL()
         
+        //44,100 hertz = 44.1kHZ = FM / CD quality audio
+        let audioFormat = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        
+        audioRecorder = try? AVAudioRecorder(url: recordingURL, format: audioFormat)
+        
+        self.recordingURL = recordingURL
     }
     
     func stopRecording() {
-        
+        audioRecorder?.stop()
     }
     
     // MARK: - Actions
@@ -196,7 +235,7 @@ class AudioRecorderController: UIViewController {
     }
     
     @IBAction func toggleRecording(_ sender: Any) {
-        
+        requestPermissionOrStartRecording()
     }
 }
 
